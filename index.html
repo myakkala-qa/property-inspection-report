@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Inspection">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="color-scheme" content="light">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' fill='%2320293A'/%3E%3Crect x='30' y='18' width='60' height='84' fill='%23F7F6F2'/%3E%3Crect x='42' y='10' width='36' height='16' rx='2' fill='%232E4B3F'/%3E%3Cline x1='40' y1='40' x2='80' y2='40' stroke='%2320293A' stroke-width='4'/%3E%3Cline x1='40' y1='54' x2='80' y2='54' stroke='%2320293A' stroke-width='4'/%3E%3Cline x1='40' y1='68' x2='68' y2='68' stroke='%2320293A' stroke-width='4'/%3E%3Ccircle cx='40' cy='84' r='6' fill='%233E7A52'/%3E%3C/svg%3E">
+<title>Property Inspection Tracker</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  :root{
+    --paper:#F7F6F2;
+    --ink:#20293A;
+    --ink-soft:#5B6472;
+    --line:#D8D5CB;
+    --line-strong:#B7B2A2;
+    --accent:#2E4B3F;
+    --good:#3E7A52;
+    --good-bg:#E7F1E9;
+    --fair:#B4791E;
+    --fair-bg:#FBF0DC;
+    --poor:#B4432B;
+    --poor-bg:#FAE6E1;
+    --na-bg:#EDECE7;
+  }
+  :root{ color-scheme: light; }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'IBM Plex Sans',sans-serif;
+    padding:0 0 4rem;
+  }
+  .wrap{max-width:900px;margin:0 auto;padding:2rem 1.5rem;}
+
+  header{
+    border-bottom:2px solid var(--ink);
+    padding-bottom:1.25rem;
+    margin-bottom:1.5rem;
+  }
+  header h1{
+    font-size:1.6rem;
+    font-weight:600;
+    margin:0 0 .9rem;
+    letter-spacing:-0.01em;
+  }
+  .meta-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+    gap:.75rem 1.25rem;
+  }
+  .meta-field label{
+    display:block;
+    font-size:.72rem;
+    color:var(--ink-soft);
+    margin-bottom:.25rem;
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .meta-field input,
+  .meta-field select{
+    width:100%;
+    border:none;
+    border-bottom:1px solid var(--line-strong);
+    background:transparent;
+    font-family:'IBM Plex Sans',sans-serif;
+    font-size:.95rem;
+    padding:.3rem 0;
+    color:var(--ink);
+  }
+  .meta-field select{cursor:pointer;}
+  .meta-field input:focus,
+  .meta-field select:focus{outline:none;border-bottom-color:var(--accent);}
+
+  .summary-bar{
+    display:flex;
+    gap:1.5rem;
+    flex-wrap:wrap;
+    margin:1.25rem 0 1.75rem;
+    padding:.9rem 1.1rem;
+    background:#fff;
+    border:1px solid var(--line);
+  }
+  .summary-item{font-size:.85rem;color:var(--ink-soft);}
+  .summary-item b{color:var(--ink);font-weight:600;}
+  .summary-item.flag-fair b{color:var(--fair);}
+  .summary-item.flag-poor b{color:var(--poor);}
+
+  .area{
+    margin-bottom:1.5rem;
+    border:1px solid var(--line);
+    background:#fff;
+  }
+  .area-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:.8rem 1rem;
+    background:var(--ink);
+    color:var(--paper);
+    gap:.6rem;
+  }
+  .area-head-left{display:flex;align-items:center;gap:.6rem;flex:1;min-width:0;}
+  .drag-handle{
+    cursor:grab;
+    color:rgba(247,246,242,.5);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:.9rem;
+    user-select:none;
+    padding:.1rem .2rem;
+    flex-shrink:0;
+  }
+  .drag-handle:active{cursor:grabbing;}
+  .item-row .drag-handle{
+    color:var(--ink-soft);
+    align-self:center;
+  }
+  .area.drag-over{
+    outline:2px dashed var(--accent);
+    outline-offset:-2px;
+  }
+  .area.dragging{opacity:.4;}
+  .item-row{position:relative;}
+  .item-row.drag-over{
+    border-top:2px solid var(--accent);
+  }
+  .item-row.dragging{opacity:.4;}
+  .area-head input{
+    background:transparent;
+    border:none;
+    color:var(--paper);
+    font-size:1.02rem;
+    font-weight:600;
+    font-family:'IBM Plex Sans',sans-serif;
+    width:60%;
+  }
+  .area-head input:focus{outline:none;border-bottom:1px solid var(--paper);}
+  .area-head .area-actions{display:flex;gap:.6rem;align-items:center;}
+  .area-head button{
+    background:none;border:1px solid rgba(247,246,242,.4);color:var(--paper);
+    font-size:.72rem;padding:.3rem .55rem;cursor:pointer;font-family:'IBM Plex Mono',monospace;
+  }
+  .area-head button:hover{background:rgba(247,246,242,.12);}
+
+  .items{padding:.4rem 1rem 1rem;}
+  .item-row{
+    display:grid;
+    grid-template-columns:auto 1.4fr .9fr 1.6fr auto;
+    gap:.7rem;
+    align-items:start;
+    padding:.7rem 0;
+    border-bottom:1px solid var(--line);
+  }
+  .item-row:last-child{border-bottom:none;}
+  .item-row input.item-name{
+    border:none;background:transparent;font-size:.92rem;font-weight:500;
+    padding:.35rem 0;font-family:'IBM Plex Sans',sans-serif;color:var(--ink);
+  }
+  .item-row input.item-name:focus{outline:none;}
+  .item-row select{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:.78rem;
+    padding:.35rem .4rem;
+    border:1px solid var(--line-strong);
+    background:#fff;
+    color:var(--ink);
+    cursor:pointer;
+  }
+  .item-row select.cond-good{background:var(--good-bg);color:var(--good);border-color:var(--good);}
+  .item-row select.cond-fair{background:var(--fair-bg);color:var(--fair);border-color:var(--fair);}
+  .item-row select.cond-poor{background:var(--poor-bg);color:var(--poor);border-color:var(--poor);}
+  .item-row select.cond-na{background:var(--na-bg);color:var(--ink-soft);}
+  .item-row textarea{
+    resize:vertical;
+    min-height:2.1rem;
+    font-family:'IBM Plex Sans',sans-serif;
+    font-size:.85rem;
+    border:1px solid var(--line);
+    padding:.35rem .5rem;
+    color:var(--ink);
+  }
+  .item-row textarea:focus{outline:none;border-color:var(--accent);}
+  .item-row .del-item{
+    background:none;border:none;color:var(--ink-soft);cursor:pointer;
+    font-size:.95rem;padding:.35rem;
+  }
+  .item-row .del-item:hover{color:var(--poor);}
+
+  .add-item-row{
+    display:flex;gap:.6rem;align-items:center;padding-top:.6rem;flex-wrap:wrap;
+  }
+  .add-item-row input{
+    flex:1;min-width:140px;
+    border:1px dashed var(--line-strong);
+    padding:.4rem .6rem;
+    font-size:.85rem;
+    font-family:'IBM Plex Sans',sans-serif;
+  }
+  .add-item-row input:focus{outline:none;border-color:var(--accent);}
+  .add-item-row select{
+    border:1px solid var(--line-strong);
+    background:#fff;
+    padding:.4rem .5rem;
+    font-size:.85rem;
+    font-family:'IBM Plex Sans',sans-serif;
+    color:var(--ink);
+    min-width:170px;
+  }
+  .add-item-row select:focus{outline:none;border-color:var(--accent);}
+  .add-item-row button.add-btn{
+    border:1px solid var(--accent);color:var(--accent);background:#fff;
+    padding:.4rem .8rem;font-size:.8rem;cursor:pointer;font-family:'IBM Plex Mono',monospace;
+  }
+  .add-item-row button.add-btn:hover{background:var(--accent);color:#fff;}
+
+  .quick-chips{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem;}
+  .chip{
+    font-size:.74rem;
+    font-family:'IBM Plex Mono',monospace;
+    border:1px solid var(--line-strong);
+    background:var(--paper);
+    padding:.25rem .55rem;
+    cursor:pointer;
+    color:var(--ink-soft);
+  }
+  .chip:hover{border-color:var(--accent);color:var(--accent);}
+
+  .bottom-actions{
+    display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1.75rem;
+  }
+  .bottom-actions button{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:.82rem;
+    padding:.6rem 1.1rem;
+    cursor:pointer;
+    border:1px solid var(--ink);
+    background:#fff;
+    color:var(--ink);
+  }
+  .bottom-actions button.primary{background:var(--ink);color:var(--paper);}
+  .bottom-actions button:hover{opacity:.85;}
+
+  .save-status{
+    font-size:.72rem;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;
+    margin-top:.5rem;
+  }
+
+  @media (max-width:640px){
+    .item-row{grid-template-columns:1fr;}
+    .item-row .del-item{justify-self:end;}
+  }
+
+  @media print{
+    body{background:#fff;}
+    .add-item-row,.area-head button,.bottom-actions,.save-status{display:none !important;}
+    .area{break-inside:avoid;}
+    .area-head{background:#eee !important;color:#000 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .area-head input{color:#000 !important;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Property inspection</h1>
+    <div class="meta-grid">
+      <div class="meta-field"><label>Property address</label><input id="f-address" placeholder="12 Example St, Auckland"></div>
+      <div class="meta-field"><label>Inspection date</label><input id="f-date" type="date"></div>
+      <div class="meta-field"><label>Inspector</label><input id="f-inspector" placeholder="Name"></div>
+      <div class="meta-field"><label>Inspection type</label>
+        <select id="f-type">
+          <option value="">Select…</option>
+          <option value="Routine">Routine</option>
+          <option value="Entry">Entry</option>
+          <option value="Exit">Exit</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <div class="summary-bar" id="summary-bar"></div>
+
+  <div id="areas"></div>
+
+  <div class="add-item-row" id="new-area-row" style="border:1px dashed var(--line-strong);padding:.8rem;margin-bottom:1.5rem;">
+    <input id="new-area-name" placeholder="Room name, e.g. Study">
+    <select id="new-area-template"></select>
+    <button class="add-btn" id="add-area-btn">+ Add area</button>
+  </div>
+
+  <div class="bottom-actions">
+    <button class="primary" id="export-btn">Download report</button>
+    <button id="print-btn">Print / save as PDF</button>
+    <button id="reset-btn">Clear all data</button>
+  </div>
+  <div class="save-status" id="save-status">Autosaves as you go</div>
+  <div class="save-status">To save to Google Drive: after downloading, open the Files app > Downloads, tap the report, then Share > Save to Drive.</div>
+
+</div>
+
+<script>
+const STORAGE_KEY = 'inspection:current';
+const CONDITIONS = ['Good','Fair','Poor','N/A'];
+
+// Standalone storage adapter — uses the browser's local storage directly,
+// so this works fully offline once added to the Home Screen (no Claude needed).
+const localDB = {
+  async get(key){
+    const v = localStorage.getItem(key);
+    return v === null ? null : { key, value: v };
+  },
+  async set(key, value){
+    localStorage.setItem(key, value);
+    return { key, value };
+  }
+};
+
+const DEFAULT_AREAS = [
+  { name:'Kitchen', items:['Walls','Ceiling','Flooring','Rangehood','Gas cooktop / oven','Cabinetry','Sink & taps','Windows'] },
+  { name:'Bathroom', items:['Walls','Ceiling','Flooring','Vanity','Mirror','Shower/bath','Toilet','Taps & plumbing','Extractor fan'] },
+  { name:'Living areas', items:['Walls','Ceiling','Flooring','Doors','Windows','Light fittings','Power points'] },
+  { name:'Bedrooms', items:['Walls','Ceiling','Flooring','Doors','Windows','Wardrobe','Light fittings'] },
+];
+
+const ROOM_TEMPLATES = {
+  'Kitchen': ['Walls','Ceiling','Flooring','Rangehood','Gas cooktop / oven','Cabinetry','Sink & taps','Windows','Light fittings','Power points'],
+  'Bathroom': ['Walls','Ceiling','Flooring','Vanity','Mirror','Shower/bath','Toilet','Taps & plumbing','Extractor fan','Light fittings'],
+  'Bedroom': ['Walls','Ceiling','Flooring','Doors','Windows','Wardrobe','Light fittings','Power points','Curtains/blinds'],
+  'Living area': ['Walls','Ceiling','Flooring','Doors','Windows','Light fittings','Power points','Curtains/blinds'],
+  'Laundry': ['Walls','Ceiling','Flooring','Sink & taps','Cabinetry','Windows','Light fittings','Power points','Extractor fan'],
+  'Garage': ['Walls','Ceiling','Flooring','Garage door','Windows','Light fittings','Power points'],
+  'Outdoor / exterior': ['Exterior walls','Roof','Guttering','Fencing','Decking/paving','Garden beds','Letterbox','Outdoor lighting'],
+  'Hallway / entry': ['Walls','Ceiling','Flooring','Front door','Light fittings','Power points'],
+  'Blank (no preset items)': []
+};
+
+const COMMON_ITEMS = ['Walls','Ceiling','Flooring','Doors','Windows','Light fittings','Power points','Skirting boards','Curtains/blinds','Smoke alarm'];
+
+let state = null;
+let saveTimer = null;
+
+function uid(){ return Math.random().toString(36).slice(2,9); }
+
+function freshState(){
+  return {
+    address:'', date:'', inspector:'', type:'',
+    areas: DEFAULT_AREAS.map(a => ({
+      id: uid(),
+      name: a.name,
+      items: a.items.map(name => ({ id: uid(), name, condition:'', notes:'' }))
+    }))
+  };
+}
+
+async function load(){
+  try{
+    const res = await localDB.get(STORAGE_KEY);
+    state = res && res.value ? JSON.parse(res.value) : freshState();
+  }catch(e){
+    state = freshState();
+  }
+  render();
+}
+
+function scheduleSave(){
+  document.getElementById('save-status').textContent = 'Saving…';
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async ()=>{
+    try{
+      await localDB.set(STORAGE_KEY, JSON.stringify(state));
+      document.getElementById('save-status').textContent = 'Saved ' + new Date().toLocaleTimeString();
+    }catch(e){
+      document.getElementById('save-status').textContent = 'Could not save — your changes stay in this session';
+    }
+  }, 500);
+}
+
+function condClass(c){
+  if(c==='Good') return 'cond-good';
+  if(c==='Fair') return 'cond-fair';
+  if(c==='Poor') return 'cond-poor';
+  if(c==='N/A') return 'cond-na';
+  return '';
+}
+
+function renderSummary(){
+  let total=0, good=0, fair=0, poor=0, unrated=0;
+  state.areas.forEach(a=>a.items.forEach(it=>{
+    total++;
+    if(it.condition==='Good') good++;
+    else if(it.condition==='Fair') fair++;
+    else if(it.condition==='Poor') poor++;
+    else if(it.condition==='') unrated++;
+  }));
+  const bar = document.getElementById('summary-bar');
+  bar.innerHTML = `
+    <div class="summary-item"><b>${total}</b> items tracked</div>
+    <div class="summary-item"><b>${good}</b> good</div>
+    <div class="summary-item flag-fair"><b>${fair}</b> fair</div>
+    <div class="summary-item flag-poor"><b>${poor}</b> poor</div>
+    <div class="summary-item"><b>${unrated}</b> not yet rated</div>
+  `;
+}
+
+function render(){
+  document.getElementById('f-address').value = state.address;
+  document.getElementById('f-date').value = state.date;
+  document.getElementById('f-inspector').value = state.inspector;
+  document.getElementById('f-type').value = state.type;
+
+  const areasEl = document.getElementById('areas');
+  areasEl.innerHTML = '';
+
+  state.areas.forEach(area=>{
+    const areaDiv = document.createElement('div');
+    areaDiv.className = 'area';
+
+    areaDiv.dataset.areaId = area.id;
+
+    const head = document.createElement('div');
+    head.className = 'area-head';
+    head.innerHTML = `
+      <div class="area-head-left">
+        <span class="drag-handle" draggable="true" title="Drag to reorder">⠿</span>
+        <input class="area-name-input" value="${escapeAttr(area.name)}">
+      </div>
+      <div class="area-actions">
+        <button class="del-area-btn" title="Remove this area">Remove area</button>
+      </div>
+    `;
+    head.querySelector('.area-name-input').addEventListener('input', e=>{
+      area.name = e.target.value; scheduleSave();
+    });
+    head.querySelector('.del-area-btn').addEventListener('click', ()=>{
+      if(confirm(`Remove "${area.name}" and all its items?`)){
+        state.areas = state.areas.filter(a=>a.id!==area.id);
+        scheduleSave(); render();
+      }
+    });
+    areaDiv.appendChild(head);
+
+    const itemsDiv = document.createElement('div');
+    itemsDiv.className = 'items';
+
+    area.items.forEach(item=>{
+      const row = document.createElement('div');
+      row.className = 'item-row';
+      row.dataset.itemId = item.id;
+      row.innerHTML = `
+        <span class="drag-handle" draggable="true" title="Drag to reorder">⠿</span>
+        <input class="item-name" value="${escapeAttr(item.name)}" placeholder="Item name">
+        <select class="${condClass(item.condition)}">
+          <option value=""${item.condition===''?' selected':''}>Rate…</option>
+          ${CONDITIONS.map(c=>`<option value="${c}"${item.condition===c?' selected':''}>${c}</option>`).join('')}
+        </select>
+        <textarea placeholder="Notes — damage, wear, action needed">${escapeHtml(item.notes)}</textarea>
+        <button class="del-item" title="Remove item"><i>✕</i></button>
+      `;
+      row.querySelector('.item-name').addEventListener('input', e=>{
+        item.name = e.target.value; scheduleSave();
+      });
+      const sel = row.querySelector('select');
+      sel.addEventListener('change', e=>{
+        item.condition = e.target.value;
+        sel.className = condClass(item.condition);
+        scheduleSave(); renderSummary();
+      });
+      row.querySelector('textarea').addEventListener('input', e=>{
+        item.notes = e.target.value; scheduleSave();
+      });
+      row.querySelector('.del-item').addEventListener('click', ()=>{
+        area.items = area.items.filter(i=>i.id!==item.id);
+        scheduleSave(); render();
+      });
+      itemsDiv.appendChild(row);
+    });
+
+    const addRow = document.createElement('div');
+    addRow.className = 'add-item-row';
+    addRow.innerHTML = `<input placeholder="Add item, e.g. Wardrobe door"><button class="add-btn">+ Add</button>`;
+    const addInput = addRow.querySelector('input');
+    const addBtn = addRow.querySelector('.add-btn');
+    const doAdd = (nameOverride)=>{
+      const v = (nameOverride !== undefined ? nameOverride : addInput.value).trim();
+      if(!v) return;
+      area.items.push({ id: uid(), name: v, condition:'', notes:'' });
+      addInput.value='';
+      scheduleSave(); render();
+    };
+    addBtn.addEventListener('click', ()=>doAdd());
+    addInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); doAdd(); } });
+    itemsDiv.appendChild(addRow);
+
+    const existingNames = new Set(area.items.map(i=>i.name.trim().toLowerCase()));
+    const suggestions = COMMON_ITEMS.filter(n=>!existingNames.has(n.toLowerCase())).slice(0,8);
+    if(suggestions.length){
+      const chipsDiv = document.createElement('div');
+      chipsDiv.className = 'quick-chips';
+      suggestions.forEach(name=>{
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'chip';
+        chip.textContent = '+ ' + name;
+        chip.addEventListener('click', ()=>doAdd(name));
+        chipsDiv.appendChild(chip);
+      });
+      itemsDiv.appendChild(chipsDiv);
+    }
+
+    areaDiv.appendChild(itemsDiv);
+    areasEl.appendChild(areaDiv);
+  });
+
+  renderSummary();
+}
+
+function escapeHtml(s){
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function escapeAttr(s){
+  return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;');
+}
+
+document.getElementById('f-address').addEventListener('input', e=>{ state.address=e.target.value; scheduleSave(); });
+document.getElementById('f-date').addEventListener('input', e=>{ state.date=e.target.value; scheduleSave(); });
+document.getElementById('f-inspector').addEventListener('input', e=>{ state.inspector=e.target.value; scheduleSave(); });
+document.getElementById('f-type').addEventListener('change', e=>{ state.type=e.target.value; scheduleSave(); });
+
+// --- Drag and drop reordering (areas + items within an area) ---
+const areasEl = document.getElementById('areas');
+let dragKind = null;   // 'area' | 'item'
+let dragAreaId = null;
+let dragItemId = null;
+
+areasEl.addEventListener('dragstart', e=>{
+  const handle = e.target.closest('.drag-handle');
+  if(!handle) return;
+  const itemRow = handle.closest('.item-row');
+  const areaBlock = handle.closest('.area');
+  if(itemRow){
+    dragKind = 'item';
+    dragAreaId = areaBlock.dataset.areaId;
+    dragItemId = itemRow.dataset.itemId;
+    itemRow.classList.add('dragging');
+  }else if(areaBlock){
+    dragKind = 'area';
+    dragAreaId = areaBlock.dataset.areaId;
+    areaBlock.classList.add('dragging');
+  }
+  e.dataTransfer.effectAllowed = 'move';
+});
+
+areasEl.addEventListener('dragend', e=>{
+  areasEl.querySelectorAll('.dragging').forEach(el=>el.classList.remove('dragging'));
+  areasEl.querySelectorAll('.drag-over').forEach(el=>el.classList.remove('drag-over'));
+  dragKind = null; dragAreaId = null; dragItemId = null;
+});
+
+areasEl.addEventListener('dragover', e=>{
+  if(!dragKind) return;
+  e.preventDefault();
+  if(dragKind === 'area'){
+    const overArea = e.target.closest('.area');
+    areasEl.querySelectorAll('.area.drag-over').forEach(el=>el.classList.remove('drag-over'));
+    if(overArea) overArea.classList.add('drag-over');
+  }else if(dragKind === 'item'){
+    const overRow = e.target.closest('.item-row');
+    const overAreaBlock = e.target.closest('.area');
+    areasEl.querySelectorAll('.item-row.drag-over').forEach(el=>el.classList.remove('drag-over'));
+    if(overRow && overAreaBlock && overAreaBlock.dataset.areaId === dragAreaId){
+      overRow.classList.add('drag-over');
+    }
+  }
+});
+
+areasEl.addEventListener('drop', e=>{
+  if(!dragKind) return;
+  e.preventDefault();
+
+  if(dragKind === 'area'){
+    const overArea = e.target.closest('.area');
+    if(overArea && overArea.dataset.areaId !== dragAreaId){
+      const fromIdx = state.areas.findIndex(a=>a.id===dragAreaId);
+      const toIdx = state.areas.findIndex(a=>a.id===overArea.dataset.areaId);
+      const [moved] = state.areas.splice(fromIdx,1);
+      state.areas.splice(toIdx,0,moved);
+      scheduleSave(); render();
+    }
+  }else if(dragKind === 'item'){
+    const overRow = e.target.closest('.item-row');
+    const overAreaBlock = e.target.closest('.area');
+    if(overRow && overAreaBlock && overAreaBlock.dataset.areaId === dragAreaId){
+      const area = state.areas.find(a=>a.id===dragAreaId);
+      const fromIdx = area.items.findIndex(i=>i.id===dragItemId);
+      const toIdx = area.items.findIndex(i=>i.id===overRow.dataset.itemId);
+      if(fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx){
+        const [moved] = area.items.splice(fromIdx,1);
+        area.items.splice(toIdx,0,moved);
+        scheduleSave(); render();
+      }
+    }
+  }
+});
+
+function populateTemplateSelect(){
+  const sel = document.getElementById('new-area-template');
+  sel.innerHTML = Object.keys(ROOM_TEMPLATES).map(name=>`<option value="${escapeAttr(name)}">${name}</option>`).join('');
+}
+populateTemplateSelect();
+
+document.getElementById('new-area-template').addEventListener('change', e=>{
+  const nameInput = document.getElementById('new-area-name');
+  const template = e.target.value;
+  if(!nameInput.value.trim() && template !== 'Blank (no preset items)'){
+    nameInput.value = template;
+  }
+});
+
+document.getElementById('add-area-btn').addEventListener('click', ()=>{
+  const input = document.getElementById('new-area-name');
+  const templateSel = document.getElementById('new-area-template');
+  const template = templateSel.value;
+  const v = input.value.trim() || template;
+  if(!v) return;
+  const presetItems = ROOM_TEMPLATES[template] || [];
+  state.areas.push({
+    id: uid(),
+    name: v,
+    items: presetItems.map(name => ({ id: uid(), name, condition:'', notes:'' }))
+  });
+  input.value='';
+  scheduleSave(); render();
+});
+document.getElementById('new-area-name').addEventListener('keydown', e=>{
+  if(e.key==='Enter'){ e.preventDefault(); document.getElementById('add-area-btn').click(); }
+});
+
+function buildReportText(){
+  let lines = [];
+  lines.push(`PROPERTY INSPECTION REPORT`);
+  lines.push(`Address: ${state.address||'—'}`);
+  lines.push(`Date: ${state.date||'—'}`);
+  lines.push(`Inspector: ${state.inspector||'—'}`);
+  lines.push(`Type: ${state.type||'—'}`);
+  lines.push('');
+  state.areas.forEach(area=>{
+    lines.push(`## ${area.name}`);
+    area.items.forEach(it=>{
+      lines.push(`- ${it.name}: ${it.condition||'Not rated'}${it.notes ? ' — '+it.notes : ''}`);
+    });
+    lines.push('');
+  });
+  return lines.join('\n');
+}
+
+function reportFilename(){
+  return `inspection-${(state.address||'report').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}.txt`;
+}
+
+document.getElementById('print-btn').addEventListener('click', ()=> window.print());
+
+document.getElementById('reset-btn').addEventListener('click', async ()=>{
+  if(!confirm('Clear all inspection data? This cannot be undone.')) return;
+  state = freshState();
+  try{ await localDB.set(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+  render();
+});
+
+document.getElementById('export-btn').addEventListener('click', ()=>{
+  const blob = new Blob([buildReportText()], {type:'text/plain'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = reportFilename();
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+load();
+</script>
+</body>
+</html>
