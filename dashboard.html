@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Property Inspection Tracker</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<style>
+  .dash-wrap{padding:2rem 0 3rem;}
+  .panel{margin-bottom:2rem;}
+  .inspector-row, .inspection-row{
+    display:flex;align-items:center;justify-content:space-between;gap:.75rem;
+    padding:.7rem 0;border-bottom:1px solid var(--line);
+  }
+  .inspector-row:last-child, .inspection-row:last-child{border-bottom:none;}
+  .add-row{display:flex;gap:.6rem;margin-top:.75rem;}
+  .add-row input{flex:1;}
+  .setup-warning{
+    background:var(--fair-bg);color:var(--fair);border:1px solid var(--fair);
+    padding:.7rem .9rem;font-size:.85rem;margin-bottom:1.5rem;display:none;
+  }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="wrap">
+    <a class="brand" href="home.html">Property Inspection Tracker</a>
+    <nav>
+      <span class="mono muted" id="user-email"></span>
+      <button class="linklike" id="signout-btn">Sign out</button>
+    </nav>
+  </div>
+</div>
+
+<div class="wrap dash-wrap">
+  <div class="setup-warning" id="setup-warning">
+    This app isn't connected to Supabase yet — paste your Project URL and anon key into supabase-config.js.
+  </div>
+
+  <div class="panel card">
+    <div class="panel-head">Your inspections</div>
+    <div id="inspections-list"></div>
+    <p class="form-note">
+      The full inspection editor (rooms, items, photos, signatures) is being migrated into this app next.
+      In the meantime, your existing tool still works fully — open it here to create or continue an inspection.
+    </p>
+    <a class="btn" href="property-inspection-tracker-standalone.html">Open the inspection tool</a>
+  </div>
+
+  <div class="panel card">
+    <div class="panel-head">Inspectors</div>
+    <div id="inspectors-list"></div>
+    <div class="add-row">
+      <input type="text" id="new-inspector-name" placeholder="Inspector name">
+      <button class="btn" id="add-inspector-btn">Add</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const supabaseUrl = window.SUPABASE_URL || '';
+  const supabaseKey = window.SUPABASE_ANON_KEY || '';
+  const configured = supabaseUrl && !supabaseUrl.startsWith('PASTE_') && supabaseKey && !supabaseKey.startsWith('PASTE_');
+  if(!configured) document.getElementById('setup-warning').style.display = 'block';
+  const client = configured ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
+
+  let currentUser = null;
+
+  function escapeHtml(s){
+    return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  async function requireAuth(){
+    if(!client) return;
+    const { data } = await client.auth.getSession();
+    if(!data || !data.session){
+      window.location.href = 'auth.html';
+      return;
+    }
+    currentUser = data.session.user;
+    document.getElementById('user-email').textContent = currentUser.email;
+    await Promise.all([loadInspections(), loadInspectors()]);
+  }
+
+  document.getElementById('signout-btn').addEventListener('click', async ()=>{
+    if(client) await client.auth.signOut();
+    window.location.href = 'home.html';
+  });
+
+  // --- Inspections (read-only list for now; editor migration is next phase) ---
+  async function loadInspections(){
+    const list = document.getElementById('inspections-list');
+    const { data, error } = await client
+      .from('inspections')
+      .select('id, address, status, inspection_date, updated_at')
+      .order('updated_at', { ascending: false })
+      .limit(10);
+    if(error){
+      list.innerHTML = `<p class="empty-note">Couldn't load inspections: ${escapeHtml(error.message)}</p>`;
+      return;
+    }
+    if(!data.length){
+      list.innerHTML = '<p class="empty-note">No inspections yet.</p>';
+      return;
+    }
+    list.innerHTML = data.map(row => `
+      <div class="inspection-row">
+        <div>
+          <strong>${escapeHtml(row.address || 'Untitled property')}</strong>
+          <span class="status-badge ${row.status === 'completed' ? 'completed' : 'draft'}">${row.status === 'completed' ? 'Completed' : 'Draft'}</span>
+          <div class="mono muted" style="font-size:.75rem;">updated ${new Date(row.updated_at).toLocaleString()}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // --- Inspectors (fully functional CRUD) ---
+  async function loadInspectors(){
+    const list = document.getElementById('inspectors-list');
+    const { data, error } = await client
+      .from('inspectors')
+      .select('id, name')
+      .order('name', { ascending: true });
+    if(error){
+      list.innerHTML = `<p class="empty-note">Couldn't load inspectors: ${escapeHtml(error.message)}</p>`;
+      return;
+    }
+    if(!data.length){
+      list.innerHTML = '<p class="empty-note">No inspectors added yet.</p>';
+      return;
+    }
+    list.innerHTML = data.map(row => `
+      <div class="inspector-row" data-id="${row.id}">
+        <span>${escapeHtml(row.name)}</span>
+        <button class="linklike del-inspector">Remove</button>
+      </div>
+    `).join('');
+    list.querySelectorAll('.del-inspector').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const id = btn.closest('.inspector-row').dataset.id;
+        if(!confirm('Remove this inspector?')) return;
+        const { error } = await client.from('inspectors').delete().eq('id', id);
+        if(error){ alert('Could not remove: ' + error.message); return; }
+        loadInspectors();
+      });
+    });
+  }
+
+  document.getElementById('add-inspector-btn').addEventListener('click', addInspector);
+  document.getElementById('new-inspector-name').addEventListener('keydown', e=>{
+    if(e.key === 'Enter'){ e.preventDefault(); addInspector(); }
+  });
+  async function addInspector(){
+    const input = document.getElementById('new-inspector-name');
+    const name = input.value.trim();
+    if(!name) return;
+    const { error } = await client.from('inspectors').insert({ name, user_id: currentUser.id });
+    if(error){ alert('Could not add inspector: ' + error.message); return; }
+    input.value = '';
+    loadInspectors();
+  }
+
+  requireAuth();
+</script>
+</body>
+</html>

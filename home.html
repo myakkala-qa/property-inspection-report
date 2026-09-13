@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Property Inspection Tracker</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .hero{padding:4rem 0 3rem;text-align:center;}
+  .hero h1{font-size:2rem;font-weight:700;letter-spacing:-0.01em;margin:0 0 .75rem;}
+  .hero p{color:var(--ink-soft);font-size:1.05rem;max-width:34rem;margin:0 auto 1.75rem;}
+  .hero .row{justify-content:center;}
+  .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1.25rem;margin:3rem 0;}
+  .feature{border:1px solid var(--line);background:#fff;padding:1.25rem;}
+  .feature h3{margin:0 0 .5rem;font-size:1rem;}
+  .feature p{margin:0;color:var(--ink-soft);font-size:.88rem;}
+  footer{border-top:1px solid var(--line);padding:2rem 0;margin-top:3rem;color:var(--ink-soft);font-size:.8rem;text-align:center;}
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="wrap">
+    <a class="brand" href="home.html">Property Inspection Tracker</a>
+    <nav>
+      <a href="auth.html?mode=login">Log in</a>
+      <a class="btn" href="auth.html?mode=signup">Sign up</a>
+    </nav>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <h1>Property inspections, without the paperwork</h1>
+    <p>Walk through a rental room by room, rate the condition of every wall, fixture, and appliance, attach photos, and get a signed PDF report — all from your phone.</p>
+    <div class="row">
+      <a class="btn btn-primary" href="auth.html?mode=signup">Get started — it's free</a>
+      <a class="btn" href="auth.html?mode=login">I already have an account</a>
+    </div>
+  </div>
+
+  <div class="features">
+    <div class="feature">
+      <h3>Room-by-room checklist</h3>
+      <p>Pre-built templates for kitchens, bathrooms, bedrooms and more — rate each item Good, Fair, or Poor as you go.</p>
+    </div>
+    <div class="feature">
+      <h3>Photos, attached automatically</h3>
+      <p>Snap a photo of any damage or wear directly against the item it belongs to.</p>
+    </div>
+    <div class="feature">
+      <h3>Tenant &amp; landlord sign-off</h3>
+      <p>Both parties sign directly on the report, with the date recorded, before it's locked in.</p>
+    </div>
+    <div class="feature">
+      <h3>A real PDF, every time</h3>
+      <p>Download it, print it, or save it straight to your files — ready to share or archive.</p>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">Property Inspection Tracker</div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign in — Property Inspection Tracker</title>
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="supabase-config.js"></script>
+<style>
+  .auth-wrap{padding:3rem 0;}
+  .tabs{display:flex;border:1px solid var(--line-strong);margin-bottom:1.5rem;}
+  .tabs button{
+    flex:1;padding:.7rem;background:#fff;border:none;cursor:pointer;
+    font-family:'IBM Plex Mono',monospace;font-size:.85rem;color:var(--ink-soft);
+  }
+  .tabs button.active{background:var(--ink);color:var(--paper);}
+  .setup-warning{
+    background:var(--fair-bg);color:var(--fair);border:1px solid var(--fair);
+    padding:.7rem .9rem;font-size:.85rem;margin-bottom:1.5rem;display:none;
+  }
+</style>
+</head>
+<body>
+
+<div class="topnav">
+  <div class="wrap"><a class="brand" href="home.html">Property Inspection Tracker</a></div>
+</div>
+
+<div class="wrap-narrow auth-wrap">
+  <div class="setup-warning" id="setup-warning">
+    This app isn't connected to Supabase yet — paste your Project URL and anon key into supabase-config.js.
+  </div>
+
+  <div class="tabs">
+    <button id="tab-login">Log in</button>
+    <button id="tab-signup">Sign up</button>
+  </div>
+
+  <div class="card">
+    <form id="login-form">
+      <div class="form-error" id="login-error"></div>
+      <div class="field"><label>Email</label><input type="email" id="login-email" required autocomplete="email"></div>
+      <div class="field"><label>Password</label><input type="password" id="login-password" required autocomplete="current-password"></div>
+      <button type="submit" class="btn btn-primary btn-block">Log in</button>
+    </form>
+
+    <form id="signup-form" style="display:none;">
+      <div class="form-error" id="signup-error"></div>
+      <div class="field"><label>Email</label><input type="email" id="signup-email" required autocomplete="email"></div>
+      <div class="field"><label>Password</label><input type="password" id="signup-password" required minlength="6" autocomplete="new-password"></div>
+      <div class="field"><label>Confirm password</label><input type="password" id="signup-confirm" required minlength="6" autocomplete="new-password"></div>
+      <button type="submit" class="btn btn-primary btn-block">Create account</button>
+      <p class="form-note">You may need to confirm your email before you can log in — check your inbox after signing up.</p>
+    </form>
+  </div>
+</div>
+
+<script>
+  const supabaseUrl = window.SUPABASE_URL || '';
+  const supabaseKey = window.SUPABASE_ANON_KEY || '';
+  const configured = supabaseUrl && !supabaseUrl.startsWith('PASTE_') && supabaseKey && !supabaseKey.startsWith('PASTE_');
+  if(!configured){
+    document.getElementById('setup-warning').style.display = 'block';
+  }
+  const client = configured ? window.supabase.createClient(supabaseUrl, supabaseKey) : null;
+
+  // If already logged in, skip straight to the dashboard.
+  (async ()=>{
+    if(!client) return;
+    const { data } = await client.auth.getSession();
+    if(data && data.session) window.location.href = 'dashboard.html';
+  })();
+
+  function setMode(mode){
+    const isSignup = mode === 'signup';
+    document.getElementById('tab-login').classList.toggle('active', !isSignup);
+    document.getElementById('tab-signup').classList.toggle('active', isSignup);
+    document.getElementById('login-form').style.display = isSignup ? 'none' : '';
+    document.getElementById('signup-form').style.display = isSignup ? '' : 'none';
+  }
+  document.getElementById('tab-login').addEventListener('click', ()=> setMode('login'));
+  document.getElementById('tab-signup').addEventListener('click', ()=> setMode('signup'));
+  const params = new URLSearchParams(window.location.search);
+  setMode(params.get('mode') === 'signup' ? 'signup' : 'login');
+
+  function showError(id, msg){
+    const el = document.getElementById(id);
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+  function hideError(id){ document.getElementById(id).style.display = 'none'; }
+
+  document.getElementById('login-form').addEventListener('submit', async e=>{
+    e.preventDefault();
+    hideError('login-error');
+    if(!client){ showError('login-error', 'Supabase isn\u2019t configured yet — see the notice above.'); return; }
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    const { error } = await client.auth.signInWithPassword({ email, password });
+    if(error){ showError('login-error', error.message); return; }
+    window.location.href = 'dashboard.html';
+  });
+
+  document.getElementById('signup-form').addEventListener('submit', async e=>{
+    e.preventDefault();
+    hideError('signup-error');
+    if(!client){ showError('signup-error', 'Supabase isn\u2019t configured yet — see the notice above.'); return; }
+    const email = document.getElementById('signup-email').value.trim();
+    const password = document.getElementById('signup-password').value;
+    const confirm = document.getElementById('signup-confirm').value;
+    if(password !== confirm){ showError('signup-error', 'Passwords don\u2019t match.'); return; }
+    const { data, error } = await client.auth.signUp({ email, password });
+    if(error){ showError('signup-error', error.message); return; }
+    if(data.session){
+      window.location.href = 'dashboard.html';
+    }else{
+      document.getElementById('signup-form').innerHTML =
+        '<p>Account created. Check <strong>' + email.replace(/</g,'&lt;') + '</strong> for a confirmation link, then log in.</p>';
+    }
+  });
+</script>
+</body>
+</html>
