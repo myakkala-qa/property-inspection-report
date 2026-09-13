@@ -989,15 +989,19 @@ function initDriveAuth(){
       fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { 'Authorization': 'Bearer ' + driveAccessToken }
       })
-        .then(r => r.ok ? r.json() : null)
+        .then(async r => {
+          if(r.ok) return r.json();
+          const t = await r.text().catch(()=> '');
+          throw new Error('userinfo ' + r.status + (t ? ': ' + t.slice(0,150) : ''));
+        })
         .then(info => {
           if(info && info.email){
             setDriveStatus('Signed in as ' + info.email, false);
           }else{
-            setDriveStatus('Signed in to Google. Ready to save to Drive.', false);
+            setDriveStatus('Signed in to Google, but no email returned. Ready to save to Drive.', false);
           }
         })
-        .catch(()=> setDriveStatus('Signed in to Google. Ready to save to Drive.', false));
+        .catch(err => setDriveStatus('Signed in to Google. (Could not confirm email: ' + err.message + ')', false));
     }
   });
 }
