@@ -1350,7 +1350,10 @@ async function driveMultipartRequest(url, method, filename, content, mimeType){
   ]);
   const res = await fetch(url, {
     method,
-    headers: { 'Authorization': 'Bearer ' + driveAccessToken },
+    headers: {
+      'Authorization': 'Bearer ' + driveAccessToken,
+      'Content-Type': `multipart/related; boundary=${boundary}`
+    },
     body
   });
   if(!res.ok){
