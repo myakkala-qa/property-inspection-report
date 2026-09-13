@@ -418,8 +418,8 @@ function draftKey(id){ return 'inspection:draft:' + id; }
 // To enable "Save to Drive": in Google Cloud Console, create an OAuth Client ID
 // (Application type: Web application; Authorized JavaScript origin = this page's
 // https:// URL), then paste the Client ID below and re-upload this file.
-const GOOGLE_CLIENT_ID = '653015207700-6s74ddv35unllp6gr95m5rettgpl60sc.apps.googleusercontent.com';
-const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+const GOOGLE_CLIENT_ID = 'PASTE_YOUR_CLIENT_ID_HERE.apps.googleusercontent.com';
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email';
 let driveTokenClient = null;
 let driveAccessToken = null;
 
@@ -983,9 +983,21 @@ function initDriveAuth(){
         return;
       }
       driveAccessToken = resp.access_token;
-      setDriveStatus('Signed in to Google. Ready to save to Drive.', false);
+      setDriveStatus('Signed in — checking account…', false);
       document.getElementById('drive-signin-btn').textContent = 'Signed in to Google';
       document.getElementById('drive-upload-btn').style.display = '';
+      fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { 'Authorization': 'Bearer ' + driveAccessToken }
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then(info => {
+          if(info && info.email){
+            setDriveStatus('Signed in as ' + info.email, false);
+          }else{
+            setDriveStatus('Signed in to Google. Ready to save to Drive.', false);
+          }
+        })
+        .catch(()=> setDriveStatus('Signed in to Google. Ready to save to Drive.', false));
     }
   });
 }
