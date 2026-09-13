@@ -270,6 +270,12 @@
   }
   .bottom-actions button.primary{background:var(--ink);color:var(--paper);}
   .bottom-actions button:hover{opacity:.85;}
+  .signin-icon{
+    font-weight:700;font-size:1rem;margin-left:-.4rem;
+    display:inline-flex;align-items:center;
+  }
+  .signin-icon.ok{color:var(--good);}
+  .signin-icon.fail{color:var(--poor);}
 
   .save-status{
     font-size:.72rem;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;
@@ -378,15 +384,21 @@
     <button class="add-btn" id="add-area-btn">+ Add area</button>
   </div>
 
+  <div class="add-item-row" id="client-id-row" style="border:1px dashed var(--line-strong);padding:.8rem;margin-bottom:1rem;">
+    <input id="client-id-input" placeholder="Paste your Google Client ID (ends in .apps.googleusercontent.com)">
+    <button class="add-btn" id="client-id-save">Save</button>
+  </div>
+
   <div class="bottom-actions">
     <button class="primary" id="export-btn">Download report</button>
     <button id="print-btn">Print / save as PDF</button>
-    <button id="drive-signin-btn">Sign in with Google</button>
+    <button id="drive-signin-btn">Sign in with Google</button><span id="drive-signin-icon" class="signin-icon"></span>
     <button id="drive-upload-btn" style="display:none;">Save to Drive</button>
     <button id="reset-btn">Delete this inspection</button>
   </div>
   <div class="save-status" id="save-status">Autosaves as you go</div>
   <div class="save-status" id="drive-status"></div>
+  <div class="save-status"><button class="linklike" id="client-id-change" style="display:none;">Change Google Client ID</button></div>
 
 </div>
 
@@ -418,7 +430,10 @@ function draftKey(id){ return 'inspection:draft:' + id; }
 // To enable "Save to Drive": in Google Cloud Console, create an OAuth Client ID
 // (Application type: Web application; Authorized JavaScript origin = this page's
 // https:// URL), then paste the Client ID below and re-upload this file.
-const GOOGLE_CLIENT_ID = '653015207700-6s74ddv35unllp6gr95m5rettgpl60sc.apps.googleusercontent.com';
+// Stored in the browser's local storage (key: inspection:googleClientId), not in this
+// file, so re-uploading an updated version of this file never wipes it out.
+const CLIENT_ID_KEY = 'inspection:googleClientId';
+let GOOGLE_CLIENT_ID = localStorage.getItem(CLIENT_ID_KEY) || '';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email';
 let driveTokenClient = null;
 let driveAccessToken = null;
@@ -837,6 +852,39 @@ function reportFilename(ext){
   return `inspection-${(state.address||'report').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}.${ext||'txt'}`;
 }
 
+function refreshClientIdUI(){
+  const row = document.getElementById('client-id-row');
+  const changeBtn = document.getElementById('client-id-change');
+  if(GOOGLE_CLIENT_ID){
+    row.style.display = 'none';
+    changeBtn.style.display = '';
+  }else{
+    row.style.display = '';
+    changeBtn.style.display = 'none';
+  }
+}
+refreshClientIdUI();
+
+document.getElementById('client-id-save').addEventListener('click', ()=>{
+  const input = document.getElementById('client-id-input');
+  const v = input.value.trim();
+  if(!v) return;
+  if(!v.endsWith('.apps.googleusercontent.com')){
+    if(!confirm('That doesn\u2019t look like a typical Google Client ID (usually ends in .apps.googleusercontent.com). Save it anyway?')) return;
+  }
+  localStorage.setItem(CLIENT_ID_KEY, v);
+  GOOGLE_CLIENT_ID = v;
+  driveTokenClient = null; // force re-init with the new ID
+  input.value = '';
+  refreshClientIdUI();
+  setDriveStatus('Client ID saved on this device. You can now sign in.', false);
+});
+
+document.getElementById('client-id-change').addEventListener('click', ()=>{
+  document.getElementById('client-id-input').value = GOOGLE_CLIENT_ID;
+  document.getElementById('client-id-row').style.display = '';
+});
+
 document.getElementById('print-btn').addEventListener('click', ()=> window.print());
 
 // --- New inspection / drafts (multiple saved inspections) ---
@@ -971,8 +1019,15 @@ function setDriveStatus(msg, isError){
   el.style.color = isError ? 'var(--poor)' : 'var(--ink-soft)';
 }
 
+function setSigninIcon(state){
+  const el = document.getElementById('drive-signin-icon');
+  if(state === 'ok'){ el.textContent = '✓'; el.className = 'signin-icon ok'; }
+  else if(state === 'fail'){ el.textContent = '✗'; el.className = 'signin-icon fail'; }
+  else{ el.textContent = ''; el.className = 'signin-icon'; }
+}
+
 function initDriveAuth(){
-  if(GOOGLE_CLIENT_ID.startsWith('PASTE_')) return;
+  if(!GOOGLE_CLIENT_ID) return;
   if(!window.google || !google.accounts || !google.accounts.oauth2) return;
   driveTokenClient = google.accounts.oauth2.initTokenClient({
     client_id: GOOGLE_CLIENT_ID,
@@ -980,9 +1035,11 @@ function initDriveAuth(){
     callback: (resp)=>{
       if(resp.error){
         setDriveStatus('Google sign-in failed: ' + resp.error, true);
+        setSigninIcon('fail');
         return;
       }
       driveAccessToken = resp.access_token;
+      setSigninIcon('ok');
       setDriveStatus('Signed in — checking account…', false);
       document.getElementById('drive-signin-btn').textContent = 'Signed in to Google';
       document.getElementById('drive-upload-btn').style.display = '';
@@ -1007,10 +1064,12 @@ function initDriveAuth(){
 }
 
 document.getElementById('drive-signin-btn').addEventListener('click', ()=>{
-  if(GOOGLE_CLIENT_ID.startsWith('PASTE_')){
-    setDriveStatus('Google Drive isn\u2019t set up yet \u2014 add your Client ID in the code first.', true);
+  if(!GOOGLE_CLIENT_ID){
+    setDriveStatus('Add your Google Client ID above first, then tap Save.', true);
+    setSigninIcon('fail');
     return;
   }
+  setSigninIcon(null);
   if(!driveTokenClient) initDriveAuth();
   if(driveTokenClient) driveTokenClient.requestAccessToken({ prompt: driveAccessToken ? '' : 'consent' });
 });
