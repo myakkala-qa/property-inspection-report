@@ -10,5 +10,5 @@
 // this. Actual data security is enforced by the Row Level Security policies
 // in schema.sql, not by keeping this key secret.
 
-window.SUPABASE_URL = 'PASTE_YOUR_SUPABASE_PROJECT_URL_HERE';
-window.SUPABASE_ANON_KEY = 'PASTE_YOUR_SUPABASE_ANON_KEY_HERE';
+window.SUPABASE_URL = 'https://ufqkiklkzmqdabhnnzvp.supabase.co';
+window.SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVmcWtpa2xrem1xZGFiaG5uenZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkzMjQ4NjksImV4cCI6MjEwNDkwMDg2OX0.AmDhiCRCPsbAVRMuPZtO2e52Da3avFnQo9lg5Dq_H24';
