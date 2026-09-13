@@ -12,6 +12,8 @@
 <title>Property Inspection Tracker</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<!-- Google Client ID lives in its own file (config.js), never touched by app updates -->
+<script src="config.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
@@ -347,6 +349,53 @@
     font-family:'IBM Plex Mono',monospace;font-size:.8rem;padding:.5rem 1rem;cursor:pointer;
     border:1px solid #fff;background:transparent;color:#fff;
   }
+
+  .status-banner{
+    margin-bottom:1rem;padding:.7rem 1rem;
+    font-family:'IBM Plex Mono',monospace;font-size:.82rem;
+    display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;
+  }
+  .status-banner.completed{background:var(--good-bg);color:var(--good);border:1px solid var(--good);}
+  .status-banner button{
+    font-family:'IBM Plex Mono',monospace;font-size:.75rem;
+    border:1px solid currentColor;background:transparent;color:inherit;
+    padding:.3rem .6rem;cursor:pointer;
+  }
+
+  .status-badge{
+    display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:.65rem;
+    padding:.1rem .4rem;margin-left:.5rem;border:1px solid currentColor;vertical-align:middle;
+  }
+  .status-badge.draft{color:var(--fair);}
+  .status-badge.completed{color:var(--good);}
+  .drafts-show-all{
+    display:block;width:100%;text-align:center;padding:.7rem;
+    font-family:'IBM Plex Mono',monospace;font-size:.78rem;
+    border:none;border-top:1px solid var(--line);background:#fff;color:var(--accent);cursor:pointer;
+  }
+
+  .signatures-panel{border:1px solid var(--line);background:#fff;padding:1rem;margin-bottom:1.5rem;}
+  .signatures-head{font-weight:600;font-size:1rem;margin-bottom:.85rem;}
+  .signature-cols{display:flex;gap:1.5rem;flex-wrap:wrap;}
+  .signature-col{flex:1;min-width:220px;}
+  .signature-col label{
+    display:block;font-size:.75rem;color:var(--ink-soft);margin-bottom:.4rem;
+    font-family:'IBM Plex Mono',monospace;
+  }
+  .sig-canvas{
+    width:100%;height:130px;border:1px solid var(--line-strong);background:#fff;
+    touch-action:none;display:block;
+  }
+  .sig-canvas.locked{opacity:.75;}
+  .sig-controls{display:flex;justify-content:space-between;align-items:center;margin-top:.5rem;gap:.5rem;}
+  .sig-controls input[type=date]{
+    font-family:'IBM Plex Mono',monospace;font-size:.78rem;
+    border:1px solid var(--line-strong);padding:.3rem .4rem;background:#fff;color:var(--ink);
+  }
+
+  @media print{
+    .sig-controls button{display:none !important;}
+  }
 </style>
 </head>
 <body>
@@ -375,6 +424,8 @@
     </div>
   </header>
 
+  <div class="status-banner" id="status-banner" hidden></div>
+
   <div class="summary-bar" id="summary-bar"></div>
 
   <div id="areas"></div>
@@ -385,13 +436,37 @@
     <button class="add-btn" id="add-area-btn">+ Add area</button>
   </div>
 
+  <div class="signatures-panel" id="signatures-panel">
+    <div class="signatures-head">Signatures</div>
+    <div class="signature-cols">
+      <div class="signature-col">
+        <label>Tenant signature</label>
+        <canvas id="tenant-sig-canvas" class="sig-canvas"></canvas>
+        <div class="sig-controls">
+          <button class="linklike" id="tenant-sig-clear">Clear</button>
+          <input type="date" id="tenant-sig-date">
+        </div>
+      </div>
+      <div class="signature-col">
+        <label>Landlord / agent signature</label>
+        <canvas id="landlord-sig-canvas" class="sig-canvas"></canvas>
+        <div class="sig-controls">
+          <button class="linklike" id="landlord-sig-clear">Clear</button>
+          <input type="date" id="landlord-sig-date">
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="add-item-row" id="client-id-row" style="border:1px dashed var(--line-strong);padding:.8rem;margin-bottom:1rem;">
     <input id="client-id-input" placeholder="Paste your Google Client ID (ends in .apps.googleusercontent.com)">
     <button class="add-btn" id="client-id-save">Save</button>
   </div>
 
   <div class="bottom-actions">
-    <button class="primary" id="drive-save-btn">Save to Drive</button><span id="drive-signin-icon" class="signin-icon"></span>
+    <button class="primary" id="complete-btn">Complete inspection</button>
+    <button id="reopen-btn" style="display:none;">Reopen for editing</button>
+    <button id="drive-save-btn">Save to Drive</button><span id="drive-signin-icon" class="signin-icon"></span>
     <button id="export-btn">Download PDF</button>
     <button id="print-btn">Print</button>
   </div>
@@ -435,7 +510,7 @@ function draftKey(id){ return 'inspection:draft:' + id; }
 // Stored in the browser's local storage (key: inspection:googleClientId), not in this
 // file, so re-uploading an updated version of this file never wipes it out.
 const CLIENT_ID_KEY = 'inspection:googleClientId';
-let GOOGLE_CLIENT_ID = localStorage.getItem(CLIENT_ID_KEY) || '';
+let GOOGLE_CLIENT_ID = localStorage.getItem(CLIENT_ID_KEY) || window.GOOGLE_CLIENT_ID_DEFAULT || '';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email';
 let driveTokenClient = null;
 let driveAccessToken = null;
@@ -483,6 +558,9 @@ function freshState(id){
   return {
     id,
     driveFileId: null,
+    status: 'draft', completedAt: null,
+    tenantSignature: null, tenantSignedDate: '',
+    landlordSignature: null, landlordSignedDate: '',
     address:'', date:'', inspector:'', type:'',
     areas: DEFAULT_AREAS.map(a => ({
       id: uid(),
@@ -504,7 +582,7 @@ async function setIndex(idx){
 async function upsertIndexEntry(){
   const idx = await getIndex();
   const i = idx.findIndex(d=>d.id===state.id);
-  const entry = { id: state.id, address: state.address, date: state.date, type: state.type, updatedAt: Date.now() };
+  const entry = { id: state.id, address: state.address, date: state.date, type: state.type, status: state.status, completedAt: state.completedAt, updatedAt: Date.now() };
   if(i>=0) idx[i] = entry; else idx.push(entry);
   await setIndex(idx);
 }
@@ -522,7 +600,7 @@ async function load(){
     const currentId = curRes ? curRes.value : null;
     if(currentId){
       const draftRes = await localDB.get(draftKey(currentId));
-      if(draftRes && draftRes.value){ state = JSON.parse(draftRes.value); if(state.driveFileId === undefined) state.driveFileId = null; }
+      if(draftRes && draftRes.value){ state = JSON.parse(draftRes.value); if(state.driveFileId === undefined) state.driveFileId = null; if(!state.status) state.status = 'draft'; if(state.completedAt === undefined) state.completedAt = null; if(state.tenantSignature === undefined) state.tenantSignature = null; if(state.tenantSignedDate === undefined) state.tenantSignedDate = ''; if(state.landlordSignature === undefined) state.landlordSignature = null; if(state.landlordSignedDate === undefined) state.landlordSignedDate = ''; }
     }
     if(!state) await startFreshDraft();
   }catch(e){
@@ -573,10 +651,29 @@ function renderSummary(){
 }
 
 function render(){
+  const locked = state.status === 'completed';
+
   document.getElementById('f-address').value = state.address;
   document.getElementById('f-date').value = state.date;
   document.getElementById('f-inspector').value = state.inspector;
   document.getElementById('f-type').value = state.type;
+  ['f-address','f-date','f-inspector','f-type'].forEach(id=>{
+    document.getElementById(id).disabled = locked;
+  });
+
+  document.getElementById('new-area-row').style.display = locked ? 'none' : '';
+  document.getElementById('complete-btn').style.display = locked ? 'none' : '';
+  document.getElementById('reopen-btn').style.display = locked ? '' : 'none';
+
+  const banner = document.getElementById('status-banner');
+  if(locked){
+    banner.hidden = false;
+    banner.className = 'status-banner completed';
+    banner.innerHTML = `<span>✓ Completed${state.completedAt ? ' — ' + new Date(state.completedAt).toLocaleString() : ''}. This inspection is locked from further edits.</span>`;
+  }else{
+    banner.hidden = true;
+    banner.innerHTML = '';
+  }
 
   const areasEl = document.getElementById('areas');
   areasEl.innerHTML = '';
@@ -591,17 +688,18 @@ function render(){
     head.className = 'area-head';
     head.innerHTML = `
       <div class="area-head-left">
-        <span class="drag-handle" draggable="true" title="Drag to reorder">⠿</span>
-        <input class="area-name-input" value="${escapeAttr(area.name)}">
+        <span class="drag-handle" ${locked ? '' : 'draggable="true"'} title="Drag to reorder" style="${locked ? 'opacity:.3;cursor:default;' : ''}">⠿</span>
+        <input class="area-name-input" value="${escapeAttr(area.name)}" ${locked ? 'disabled' : ''}>
       </div>
       <div class="area-actions">
-        <button class="del-area-btn" title="Remove this area">Remove area</button>
+        ${locked ? '' : '<button class="del-area-btn" title="Remove this area">Remove area</button>'}
       </div>
     `;
     head.querySelector('.area-name-input').addEventListener('input', e=>{
       area.name = e.target.value; scheduleSave();
     });
-    head.querySelector('.del-area-btn').addEventListener('click', ()=>{
+    const delAreaBtn = head.querySelector('.del-area-btn');
+    if(delAreaBtn) delAreaBtn.addEventListener('click', ()=>{
       if(confirm(`Remove "${area.name}" and all its items?`)){
         state.areas = state.areas.filter(a=>a.id!==area.id);
         scheduleSave(); render();
@@ -619,21 +717,18 @@ function render(){
       row.dataset.itemId = item.id;
       row.innerHTML = `
         <div class="item-top">
-          <span class="drag-handle" draggable="true" title="Drag to reorder">⠿</span>
-          <input class="item-name" value="${escapeAttr(item.name)}" placeholder="Item name">
-          <select class="${condClass(item.condition)}">
+          <span class="drag-handle" ${locked ? '' : 'draggable="true"'} title="Drag to reorder" style="${locked ? 'opacity:.3;cursor:default;' : ''}">⠿</span>
+          <input class="item-name" value="${escapeAttr(item.name)}" placeholder="Item name" ${locked ? 'disabled' : ''}>
+          <select class="${condClass(item.condition)}" ${locked ? 'disabled' : ''}>
             <option value=""${item.condition===''?' selected':''}>Rate…</option>
             ${CONDITIONS.map(c=>`<option value="${c}"${item.condition===c?' selected':''}>${c}</option>`).join('')}
           </select>
-          <button class="del-item" title="Remove item"><i>✕</i></button>
+          ${locked ? '' : '<button class="del-item" title="Remove item"><i>✕</i></button>'}
         </div>
-        <textarea placeholder="Notes — damage, wear, action needed">${escapeHtml(item.notes)}</textarea>
+        <textarea placeholder="Notes — damage, wear, action needed" ${locked ? 'disabled' : ''}>${escapeHtml(item.notes)}</textarea>
         <div class="item-photos">
           ${item.photos.map((src,idx)=>`<button type="button" class="photo-thumb" data-idx="${idx}" style="background-image:url('${src}')" title="View photo"></button>`).join('')}
-          <label class="add-photo-btn" title="Add a photo">
-            📷
-            <input type="file" accept="image/*" capture="environment" class="photo-input">
-          </label>
+          ${locked ? '' : `<label class="add-photo-btn" title="Add a photo">📷<input type="file" accept="image/*" capture="environment" class="photo-input"></label>`}
         </div>
       `;
       row.querySelector('.item-name').addEventListener('input', e=>{
@@ -648,7 +743,8 @@ function render(){
       row.querySelector('textarea').addEventListener('input', e=>{
         item.notes = e.target.value; scheduleSave();
       });
-      row.querySelector('.del-item').addEventListener('click', ()=>{
+      const delItemBtn = row.querySelector('.del-item');
+      if(delItemBtn) delItemBtn.addEventListener('click', ()=>{
         area.items = area.items.filter(i=>i.id!==item.id);
         scheduleSave(); render();
       });
@@ -658,7 +754,7 @@ function render(){
         });
       });
       const photoInput = row.querySelector('.photo-input');
-      photoInput.addEventListener('change', async e=>{
+      if(photoInput) photoInput.addEventListener('change', async e=>{
         const file = e.target.files[0];
         if(!file) return;
         try{
@@ -672,36 +768,38 @@ function render(){
       itemsDiv.appendChild(row);
     });
 
-    const addRow = document.createElement('div');
-    addRow.className = 'add-item-row';
-    addRow.innerHTML = `<input placeholder="Add item, e.g. Wardrobe door"><button class="add-btn">+ Add</button>`;
-    const addInput = addRow.querySelector('input');
-    const addBtn = addRow.querySelector('.add-btn');
-    const doAdd = (nameOverride)=>{
-      const v = (nameOverride !== undefined ? nameOverride : addInput.value).trim();
-      if(!v) return;
-      area.items.push({ id: uid(), name: v, condition:'', notes:'', photos:[] });
-      addInput.value='';
-      scheduleSave(); render();
-    };
-    addBtn.addEventListener('click', ()=>doAdd());
-    addInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); doAdd(); } });
-    itemsDiv.appendChild(addRow);
+    if(!locked){
+      const addRow = document.createElement('div');
+      addRow.className = 'add-item-row';
+      addRow.innerHTML = `<input placeholder="Add item, e.g. Wardrobe door"><button class="add-btn">+ Add</button>`;
+      const addInput = addRow.querySelector('input');
+      const addBtn = addRow.querySelector('.add-btn');
+      const doAdd = (nameOverride)=>{
+        const v = (nameOverride !== undefined ? nameOverride : addInput.value).trim();
+        if(!v) return;
+        area.items.push({ id: uid(), name: v, condition:'', notes:'', photos:[] });
+        addInput.value='';
+        scheduleSave(); render();
+      };
+      addBtn.addEventListener('click', ()=>doAdd());
+      addInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); doAdd(); } });
+      itemsDiv.appendChild(addRow);
 
-    const existingNames = new Set(area.items.map(i=>i.name.trim().toLowerCase()));
-    const suggestions = COMMON_ITEMS.filter(n=>!existingNames.has(n.toLowerCase())).slice(0,8);
-    if(suggestions.length){
-      const chipsDiv = document.createElement('div');
-      chipsDiv.className = 'quick-chips';
-      suggestions.forEach(name=>{
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.className = 'chip';
-        chip.textContent = '+ ' + name;
-        chip.addEventListener('click', ()=>doAdd(name));
+      const existingNames = new Set(area.items.map(i=>i.name.trim().toLowerCase()));
+      const suggestions = COMMON_ITEMS.filter(n=>!existingNames.has(n.toLowerCase())).slice(0,8);
+      if(suggestions.length){
+        const chipsDiv = document.createElement('div');
+        chipsDiv.className = 'quick-chips';
+        suggestions.forEach(name=>{
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'chip';
+          chip.textContent = '+ ' + name;
+          chip.addEventListener('click', ()=>doAdd(name));
         chipsDiv.appendChild(chip);
-      });
-      itemsDiv.appendChild(chipsDiv);
+        });
+        itemsDiv.appendChild(chipsDiv);
+      }
     }
 
     areaDiv.appendChild(itemsDiv);
@@ -709,6 +807,7 @@ function render(){
   });
 
   renderSummary();
+  renderSignatures();
 }
 
 function escapeHtml(s){
@@ -730,6 +829,7 @@ let dragAreaId = null;
 let dragItemId = null;
 
 areasEl.addEventListener('dragstart', e=>{
+  if(state.status === 'completed'){ e.preventDefault(); return; }
   const handle = e.target.closest('.drag-handle');
   if(!handle) return;
   const itemRow = handle.closest('.item-card');
@@ -900,6 +1000,36 @@ function buildReportPDF(){
     y += 4;
   });
 
+  // --- Signatures ---
+  ensureSpace(55);
+  y += 4;
+  doc.setFont('helvetica','bold'); doc.setFontSize(13);
+  doc.text('Signatures', marginX, y); y += 8;
+
+  const colWidth = (pageWidth - marginX*2 - 10) / 2;
+  const sigHeight = 22;
+  const sigStartY = y;
+
+  function drawSignatureBlock(x, label, imgSrc, signedDate){
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(90);
+    doc.text(label, x, sigStartY);
+    doc.setTextColor(0);
+    doc.rect(x, sigStartY + 3, colWidth, sigHeight);
+    if(imgSrc){
+      try{ doc.addImage(imgSrc, 'PNG', x + 1, sigStartY + 4, colWidth - 2, sigHeight - 2); }catch(e){}
+    }else{
+      doc.setFontSize(8); doc.setTextColor(160);
+      doc.text('Not signed', x + 3, sigStartY + 3 + sigHeight/2 + 1);
+      doc.setTextColor(0);
+    }
+    doc.setFontSize(9);
+    doc.text(`Date: ${signedDate || '—'}`, x, sigStartY + sigHeight + 10);
+  }
+
+  drawSignatureBlock(marginX, 'Tenant signature', state.tenantSignature, state.tenantSignedDate);
+  drawSignatureBlock(marginX + colWidth + 10, 'Landlord / agent signature', state.landlordSignature, state.landlordSignedDate);
+  y = sigStartY + sigHeight + 16;
+
   return doc;
 }
 
@@ -947,6 +1077,27 @@ document.getElementById('new-btn').addEventListener('click', async ()=>{
 
 document.getElementById('reset-btn').addEventListener('click', ()=> deleteDraft(state.id));
 
+document.getElementById('complete-btn').addEventListener('click', async ()=>{
+  if(!confirm('Mark this inspection as completed? It will be locked from further edits — you can reopen it later if you need to make changes.')) return;
+  state.status = 'completed';
+  state.completedAt = Date.now();
+  scheduleSave();
+  render();
+  if(driveAccessToken){
+    await doSaveToDrive();
+  }else{
+    setDriveStatus('Marked as completed. Tap Save to Drive to save the final PDF.', false);
+  }
+});
+
+document.getElementById('reopen-btn').addEventListener('click', ()=>{
+  if(!confirm('Reopen this inspection for editing?')) return;
+  state.status = 'draft';
+  state.completedAt = null;
+  scheduleSave();
+  render();
+});
+
 async function deleteDraft(id){
   if(!confirm('Delete this inspection? This cannot be undone.')) return;
   try{ localStorage.removeItem(draftKey(id)); }catch(e){}
@@ -969,7 +1120,7 @@ async function resumeDraft(id){
   try{
     const res = await localDB.get(draftKey(id));
     if(res && res.value){
-      state = JSON.parse(res.value); if(state.driveFileId === undefined) state.driveFileId = null;
+      state = JSON.parse(res.value); if(state.driveFileId === undefined) state.driveFileId = null; if(!state.status) state.status = 'draft'; if(state.completedAt === undefined) state.completedAt = null; if(state.tenantSignature === undefined) state.tenantSignature = null; if(state.tenantSignedDate === undefined) state.tenantSignedDate = ''; if(state.landlordSignature === undefined) state.landlordSignature = null; if(state.landlordSignedDate === undefined) state.landlordSignedDate = '';
       await localDB.set(CURRENT_KEY, state.id);
       render();
     }
@@ -977,31 +1128,53 @@ async function resumeDraft(id){
   document.getElementById('drafts-modal').hidden = true;
 }
 
-async function openDraftsModal(){
-  const idx = await getIndex();
-  idx.sort((a,b)=> (b.updatedAt||0)-(a.updatedAt||0));
+let draftsShowAll = false;
+
+function renderDraftsList(){
+  const idx = draftsSortedCache;
   const list = document.getElementById('drafts-list');
   if(!idx.length){
     list.innerHTML = '<p class="empty-note">No saved inspections yet.</p>';
-  }else{
-    list.innerHTML = idx.map(d=>`
+    return;
+  }
+  const visible = draftsShowAll ? idx : idx.slice(0,5);
+  list.innerHTML = visible.map(d=>{
+    const isCompleted = d.status === 'completed';
+    const badge = `<span class="status-badge ${isCompleted?'completed':'draft'}">${isCompleted?'Completed':'Draft'}</span>`;
+    const whenLabel = isCompleted && d.completedAt
+      ? 'completed ' + new Date(d.completedAt).toLocaleString()
+      : 'updated ' + new Date(d.updatedAt||0).toLocaleString();
+    return `
       <div class="draft-row${d.id===state.id?' draft-current':''}" data-id="${d.id}">
         <div class="draft-info">
-          <div class="draft-title">${escapeHtml(d.address||'Untitled property')}</div>
-          <div class="draft-meta">${escapeHtml(d.type||'No type set')}${d.date?' · '+escapeHtml(d.date):''} · updated ${new Date(d.updatedAt||0).toLocaleString()}</div>
+          <div class="draft-title">${escapeHtml(d.address||'Untitled property')}${badge}</div>
+          <div class="draft-meta">${escapeHtml(d.type||'No type set')}${d.date?' · '+escapeHtml(d.date):''} · ${whenLabel}</div>
         </div>
         <div class="draft-actions">
           <button class="draft-resume">${d.id===state.id?'Current':'Resume'}</button>
           <button class="draft-delete">Delete</button>
         </div>
       </div>
-    `).join('');
-    list.querySelectorAll('.draft-row').forEach(rowEl=>{
-      const id = rowEl.dataset.id;
-      rowEl.querySelector('.draft-resume').addEventListener('click', ()=>resumeDraft(id));
-      rowEl.querySelector('.draft-delete').addEventListener('click', ()=>deleteDraft(id));
-    });
-  }
+    `;
+  }).join('') + (!draftsShowAll && idx.length > 5
+    ? `<button class="drafts-show-all" id="drafts-show-all-btn">Show all ${idx.length} inspections</button>`
+    : '');
+
+  list.querySelectorAll('.draft-row').forEach(rowEl=>{
+    const id = rowEl.dataset.id;
+    rowEl.querySelector('.draft-resume').addEventListener('click', ()=>resumeDraft(id));
+    rowEl.querySelector('.draft-delete').addEventListener('click', ()=>deleteDraft(id));
+  });
+  const showAllBtn = document.getElementById('drafts-show-all-btn');
+  if(showAllBtn) showAllBtn.addEventListener('click', ()=>{ draftsShowAll = true; renderDraftsList(); });
+}
+
+let draftsSortedCache = [];
+async function openDraftsModal(){
+  draftsShowAll = false;
+  draftsSortedCache = await getIndex();
+  draftsSortedCache.sort((a,b)=> (b.updatedAt||0)-(a.updatedAt||0));
+  renderDraftsList();
   document.getElementById('drafts-modal').hidden = false;
 }
 document.getElementById('drafts-btn').addEventListener('click', openDraftsModal);
@@ -1038,10 +1211,12 @@ let lightboxItem = null, lightboxIdx = null;
 function openLightbox(item, idx){
   lightboxItem = item; lightboxIdx = idx;
   document.getElementById('lightbox-img').src = item.photos[idx];
+  document.getElementById('lightbox-delete').style.display = state.status === 'completed' ? 'none' : '';
   document.getElementById('lightbox').hidden = false;
 }
 document.getElementById('lightbox-close').addEventListener('click', ()=>{ document.getElementById('lightbox').hidden = true; });
 document.getElementById('lightbox-delete').addEventListener('click', ()=>{
+  if(state.status === 'completed'){ document.getElementById('lightbox').hidden = true; return; }
   if(lightboxItem && lightboxIdx != null){
     lightboxItem.photos.splice(lightboxIdx,1);
     scheduleSave();
@@ -1184,6 +1359,115 @@ async function driveMultipartRequest(url, method, filename, content, mimeType){
   }
   return res.json();
 }
+
+// --- Signature pads (tenant + landlord) ---
+function setupSignaturePad(canvasId, field){
+  const canvas = document.getElementById(canvasId);
+  const ctx = canvas.getContext('2d');
+  let drawing = false, lastX = 0, lastY = 0;
+
+  function resize(){
+    const rect = canvas.getBoundingClientRect();
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = rect.width * ratio;
+    canvas.height = rect.height * ratio;
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.scale(ratio, ratio);
+    ctx.strokeStyle = '#20293A';
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    redrawFromState();
+  }
+
+  function redrawFromState(){
+    if(!state) return;
+    const rect = canvas.getBoundingClientRect();
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    const src = state[field];
+    if(src){
+      const img = new Image();
+      img.onload = ()=> ctx.drawImage(img, 0, 0, rect.width, rect.height);
+      img.src = src;
+    }
+  }
+
+  function pos(e){
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+  function isLocked(){ return state.status === 'completed'; }
+
+  canvas.addEventListener('pointerdown', e=>{
+    if(isLocked()) return;
+    drawing = true;
+    const p = pos(e);
+    lastX = p.x; lastY = p.y;
+    try{ canvas.setPointerCapture(e.pointerId); }catch(err){}
+  });
+  canvas.addEventListener('pointermove', e=>{
+    if(!drawing || isLocked()) return;
+    const p = pos(e);
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    lastX = p.x; lastY = p.y;
+  });
+  function endStroke(){
+    if(!drawing) return;
+    drawing = false;
+    state[field] = canvas.toDataURL('image/png');
+    scheduleSave();
+  }
+  canvas.addEventListener('pointerup', endStroke);
+  canvas.addEventListener('pointerleave', endStroke);
+  canvas.addEventListener('pointercancel', endStroke);
+
+  window.addEventListener('resize', resize);
+
+  return { resize, redrawFromState };
+}
+
+const tenantSigPad = setupSignaturePad('tenant-sig-canvas', 'tenantSignature');
+const landlordSigPad = setupSignaturePad('landlord-sig-canvas', 'landlordSignature');
+tenantSigPad.resize();
+landlordSigPad.resize();
+
+function renderSignatures(){
+  const locked = state.status === 'completed';
+  const tenantDateEl = document.getElementById('tenant-sig-date');
+  const landlordDateEl = document.getElementById('landlord-sig-date');
+  tenantDateEl.value = state.tenantSignedDate || '';
+  landlordDateEl.value = state.landlordSignedDate || '';
+  tenantDateEl.disabled = locked;
+  landlordDateEl.disabled = locked;
+  document.getElementById('tenant-sig-clear').style.display = locked ? 'none' : '';
+  document.getElementById('landlord-sig-clear').style.display = locked ? 'none' : '';
+  document.getElementById('tenant-sig-canvas').classList.toggle('locked', locked);
+  document.getElementById('landlord-sig-canvas').classList.toggle('locked', locked);
+  tenantSigPad.redrawFromState();
+  landlordSigPad.redrawFromState();
+}
+
+document.getElementById('tenant-sig-date').addEventListener('change', e=>{
+  state.tenantSignedDate = e.target.value; scheduleSave();
+});
+document.getElementById('landlord-sig-date').addEventListener('change', e=>{
+  state.landlordSignedDate = e.target.value; scheduleSave();
+});
+document.getElementById('tenant-sig-clear').addEventListener('click', ()=>{
+  if(state.status === 'completed') return;
+  state.tenantSignature = null;
+  scheduleSave();
+  tenantSigPad.redrawFromState();
+});
+document.getElementById('landlord-sig-clear').addEventListener('click', ()=>{
+  if(state.status === 'completed') return;
+  state.landlordSignature = null;
+  scheduleSave();
+  landlordSigPad.redrawFromState();
+});
 
 window.addEventListener('load', ()=>{ setTimeout(initDriveAuth, 300); });
 
