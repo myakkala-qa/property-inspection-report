@@ -11,6 +11,7 @@
 <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Crect width='120' height='120' fill='%2320293A'/%3E%3Crect x='30' y='18' width='60' height='84' fill='%23F7F6F2'/%3E%3Crect x='42' y='10' width='36' height='16' rx='2' fill='%232E4B3F'/%3E%3Cline x1='40' y1='40' x2='80' y2='40' stroke='%2320293A' stroke-width='4'/%3E%3Cline x1='40' y1='54' x2='80' y2='54' stroke='%2320293A' stroke-width='4'/%3E%3Cline x1='40' y1='68' x2='68' y2='68' stroke='%2320293A' stroke-width='4'/%3E%3Ccircle cx='40' cy='84' r='6' fill='%233E7A52'/%3E%3C/svg%3E">
 <title>Property Inspection Tracker</title>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
@@ -390,15 +391,16 @@
   </div>
 
   <div class="bottom-actions">
-    <button class="primary" id="export-btn">Download report</button>
-    <button id="print-btn">Print / save as PDF</button>
-    <button id="drive-signin-btn">Sign in with Google</button><span id="drive-signin-icon" class="signin-icon"></span>
-    <button id="drive-upload-btn" style="display:none;">Save to Drive</button>
-    <button id="reset-btn">Delete this inspection</button>
+    <button class="primary" id="drive-save-btn">Save to Drive</button><span id="drive-signin-icon" class="signin-icon"></span>
+    <button id="export-btn">Download PDF</button>
+    <button id="print-btn">Print</button>
   </div>
   <div class="save-status" id="save-status">Autosaves as you go</div>
   <div class="save-status" id="drive-status"></div>
-  <div class="save-status"><button class="linklike" id="client-id-change" style="display:none;">Change Google Client ID</button></div>
+  <div class="save-status" style="display:flex;gap:1rem;flex-wrap:wrap;">
+    <button class="linklike" id="client-id-change" style="display:none;">Change Google Client ID</button>
+    <button class="linklike" id="reset-btn">Delete this inspection</button>
+  </div>
 
 </div>
 
@@ -480,6 +482,7 @@ function uid(){ return Math.random().toString(36).slice(2,9); }
 function freshState(id){
   return {
     id,
+    driveFileId: null,
     address:'', date:'', inspector:'', type:'',
     areas: DEFAULT_AREAS.map(a => ({
       id: uid(),
@@ -519,7 +522,7 @@ async function load(){
     const currentId = curRes ? curRes.value : null;
     if(currentId){
       const draftRes = await localDB.get(draftKey(currentId));
-      if(draftRes && draftRes.value) state = JSON.parse(draftRes.value);
+      if(draftRes && draftRes.value){ state = JSON.parse(draftRes.value); if(state.driveFileId === undefined) state.driveFileId = null; }
     }
     if(!state) await startFreshDraft();
   }catch(e){
@@ -829,27 +832,75 @@ document.getElementById('new-area-name').addEventListener('keydown', e=>{
   if(e.key==='Enter'){ e.preventDefault(); document.getElementById('add-area-btn').click(); }
 });
 
-function buildReportText(){
-  let lines = [];
-  lines.push(`PROPERTY INSPECTION REPORT`);
-  lines.push(`Address: ${state.address||'—'}`);
-  lines.push(`Date: ${state.date||'—'}`);
-  lines.push(`Inspector: ${state.inspector||'—'}`);
-  lines.push(`Type: ${state.type||'—'}`);
-  lines.push('');
-  state.areas.forEach(area=>{
-    lines.push(`## ${area.name}`);
-    area.items.forEach(it=>{
-      const photoNote = it.photos && it.photos.length ? ` (${it.photos.length} photo${it.photos.length>1?'s':''} attached — see printed/PDF copy)` : '';
-      lines.push(`- ${it.name}: ${it.condition||'Not rated'}${it.notes ? ' — '+it.notes : ''}${photoNote}`);
-    });
-    lines.push('');
-  });
-  return lines.join('\n');
+function reportFilename(ext){
+  return `inspection-${(state.address||'report').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}.${ext||'pdf'}`;
 }
 
-function reportFilename(ext){
-  return `inspection-${(state.address||'report').replace(/[^a-z0-9]+/gi,'-').toLowerCase()}.${ext||'txt'}`;
+function buildReportPDF(){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit:'mm', format:'a4' });
+  const marginX = 15;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const maxY = pageHeight - 15;
+  let y = 20;
+
+  function ensureSpace(needed){
+    if(y + needed > maxY){ doc.addPage(); y = 20; }
+  }
+
+  doc.setFont('helvetica','bold'); doc.setFontSize(16);
+  doc.text('Property Inspection Report', marginX, y); y += 8;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  [
+    `Address: ${state.address || '—'}`,
+    `Date: ${state.date || '—'}`,
+    `Inspector: ${state.inspector || '—'}`,
+    `Type: ${state.type || '—'}`
+  ].forEach(line=>{ doc.text(line, marginX, y); y += 5; });
+  y += 4;
+
+  state.areas.forEach(area=>{
+    ensureSpace(10);
+    doc.setFont('helvetica','bold'); doc.setFontSize(13);
+    doc.text(area.name, marginX, y); y += 6;
+
+    area.items.forEach(item=>{
+      ensureSpace(7);
+      doc.setFont('helvetica','bold'); doc.setFontSize(10);
+      doc.text(item.name, marginX, y);
+      doc.setFont('helvetica','normal');
+      doc.text(`— ${item.condition || 'Not rated'}`, marginX + 60, y);
+      y += 5;
+
+      if(item.notes){
+        const lines = doc.splitTextToSize(item.notes, pageWidth - marginX*2 - 6);
+        ensureSpace(lines.length * 4.3 + 1);
+        doc.setFontSize(9); doc.setTextColor(90);
+        doc.text(lines, marginX + 4, y);
+        doc.setTextColor(0); doc.setFontSize(10);
+        y += lines.length * 4.3 + 1;
+      }
+
+      if(item.photos && item.photos.length){
+        const thumb = 28, gap = 3;
+        ensureSpace(thumb + 3);
+        let x = marginX + 4;
+        item.photos.forEach(src=>{
+          if(x + thumb > pageWidth - marginX){
+            x = marginX + 4; y += thumb + gap; ensureSpace(thumb + 3);
+          }
+          try{ doc.addImage(src, 'JPEG', x, y, thumb, thumb); }catch(e){}
+          x += thumb + gap;
+        });
+        y += thumb + gap;
+      }
+      y += 3;
+    });
+    y += 4;
+  });
+
+  return doc;
 }
 
 function refreshClientIdUI(){
@@ -918,7 +969,7 @@ async function resumeDraft(id){
   try{
     const res = await localDB.get(draftKey(id));
     if(res && res.value){
-      state = JSON.parse(res.value);
+      state = JSON.parse(res.value); if(state.driveFileId === undefined) state.driveFileId = null;
       await localDB.set(CURRENT_KEY, state.id);
       render();
     }
@@ -1003,28 +1054,25 @@ document.getElementById('lightbox').addEventListener('click', e=>{
 });
 
 document.getElementById('export-btn').addEventListener('click', ()=>{
-  const blob = new Blob([buildReportText()], {type:'text/plain'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = reportFilename('txt');
-  a.click();
-  URL.revokeObjectURL(url);
+  const doc = buildReportPDF();
+  doc.save(reportFilename('pdf'));
 });
 
-// --- Google Drive sign-in and upload ---
+// --- Google Drive sign-in and save (overwrites the same file on repeat saves) ---
 function setDriveStatus(msg, isError){
   const el = document.getElementById('drive-status');
   el.textContent = msg;
   el.style.color = isError ? 'var(--poor)' : 'var(--ink-soft)';
 }
 
-function setSigninIcon(state){
+function setSigninIcon(iconState){
   const el = document.getElementById('drive-signin-icon');
-  if(state === 'ok'){ el.textContent = '✓'; el.className = 'signin-icon ok'; }
-  else if(state === 'fail'){ el.textContent = '✗'; el.className = 'signin-icon fail'; }
+  if(iconState === 'ok'){ el.textContent = '✓'; el.className = 'signin-icon ok'; }
+  else if(iconState === 'fail'){ el.textContent = '✗'; el.className = 'signin-icon fail'; }
   else{ el.textContent = ''; el.className = 'signin-icon'; }
 }
+
+let pendingDriveSave = false;
 
 function initDriveAuth(){
   if(!GOOGLE_CLIENT_ID) return;
@@ -1036,13 +1084,11 @@ function initDriveAuth(){
       if(resp.error){
         setDriveStatus('Google sign-in failed: ' + resp.error, true);
         setSigninIcon('fail');
+        pendingDriveSave = false;
         return;
       }
       driveAccessToken = resp.access_token;
       setSigninIcon('ok');
-      setDriveStatus('Signed in — checking account…', false);
-      document.getElementById('drive-signin-btn').textContent = 'Signed in to Google';
-      document.getElementById('drive-upload-btn').style.display = '';
       fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { 'Authorization': 'Bearer ' + driveAccessToken }
       })
@@ -1052,57 +1098,84 @@ function initDriveAuth(){
           throw new Error('userinfo ' + r.status + (t ? ': ' + t.slice(0,150) : ''));
         })
         .then(info => {
-          if(info && info.email){
-            setDriveStatus('Signed in as ' + info.email, false);
-          }else{
-            setDriveStatus('Signed in to Google, but no email returned. Ready to save to Drive.', false);
-          }
+          if(info && info.email) setDriveStatus('Signed in as ' + info.email, false);
         })
-        .catch(err => setDriveStatus('Signed in to Google. (Could not confirm email: ' + err.message + ')', false));
+        .catch(()=>{});
+
+      if(pendingDriveSave){
+        pendingDriveSave = false;
+        doSaveToDrive();
+      }
     }
   });
 }
 
-document.getElementById('drive-signin-btn').addEventListener('click', ()=>{
+document.getElementById('drive-save-btn').addEventListener('click', ()=>{
   if(!GOOGLE_CLIENT_ID){
     setDriveStatus('Add your Google Client ID above first, then tap Save.', true);
-    setSigninIcon('fail');
+    document.getElementById('client-id-row').style.display = '';
     return;
   }
-  setSigninIcon(null);
-  if(!driveTokenClient) initDriveAuth();
-  if(driveTokenClient) driveTokenClient.requestAccessToken({ prompt: driveAccessToken ? '' : 'consent' });
+  if(!driveAccessToken){
+    pendingDriveSave = true;
+    setSigninIcon(null);
+    if(!driveTokenClient) initDriveAuth();
+    if(driveTokenClient) driveTokenClient.requestAccessToken({ prompt: 'consent' });
+  }else{
+    doSaveToDrive();
+  }
 });
 
-document.getElementById('drive-upload-btn').addEventListener('click', async ()=>{
-  if(!driveAccessToken){ setDriveStatus('Please sign in first.', true); return; }
-  setDriveStatus('Uploading to Drive…', false);
+async function doSaveToDrive(){
+  setDriveStatus('Preparing PDF…', false);
   try{
-    await uploadToDrive(reportFilename('txt'), buildReportText(), 'text/plain');
-    setDriveStatus('Saved to Google Drive.', false);
+    const doc = buildReportPDF();
+    const blob = doc.output('blob');
+    const filename = reportFilename('pdf');
+    setDriveStatus('Uploading to Drive…', false);
+
+    if(state.driveFileId){
+      try{
+        await driveMultipartRequest(
+          `https://www.googleapis.com/upload/drive/v3/files/${state.driveFileId}?uploadType=multipart`,
+          'PATCH', filename, blob, 'application/pdf'
+        );
+      }catch(err){
+        // the previously-linked file may have been deleted/moved in Drive — create a fresh one instead
+        const created = await driveMultipartRequest(
+          'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+          'POST', filename, blob, 'application/pdf'
+        );
+        state.driveFileId = created.id;
+        scheduleSave();
+      }
+    }else{
+      const created = await driveMultipartRequest(
+        'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+        'POST', filename, blob, 'application/pdf'
+      );
+      state.driveFileId = created.id;
+      scheduleSave();
+    }
+    setDriveStatus('Saved to Google Drive as ' + filename + '. Saving again will update this same file.', false);
+    setSigninIcon('ok');
   }catch(err){
     setDriveStatus('Upload failed: ' + (err.message || 'unknown error'), true);
   }
-});
+}
 
-async function uploadToDrive(filename, content, mimeType){
+async function driveMultipartRequest(url, method, filename, content, mimeType){
   const metadata = { name: filename, mimeType };
   const boundary = 'inspboundary' + Date.now();
-  const body =
-    `--${boundary}\r\n` +
-    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
-    JSON.stringify(metadata) + `\r\n` +
-    `--${boundary}\r\n` +
-    `Content-Type: ${mimeType}\r\n\r\n` +
-    content + `\r\n` +
-    `--${boundary}--`;
-
-  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-    method: 'POST',
-    headers:{
-      'Authorization': 'Bearer ' + driveAccessToken,
-      'Content-Type': `multipart/related; boundary=${boundary}`
-    },
+  const body = new Blob([
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`,
+    `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
+    content,
+    `\r\n--${boundary}--`
+  ]);
+  const res = await fetch(url, {
+    method,
+    headers: { 'Authorization': 'Bearer ' + driveAccessToken },
     body
   });
   if(!res.ok){
