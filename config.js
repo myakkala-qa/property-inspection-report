@@ -7,4 +7,4 @@
 // keeping the quotes, then upload this file to the SAME folder as index.html
 // in your GitHub repo.
 
-window.GOOGLE_CLIENT_ID_DEFAULT = 'PASTE_YOUR_CLIENT_ID_HERE.apps.googleusercontent.com';
+window.GOOGLE_CLIENT_ID_DEFAULT = '653015207700-6s74ddv35unllp6gr95m5rettgpl60sc.apps.googleusercontent.com';
